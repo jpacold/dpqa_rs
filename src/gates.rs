@@ -2,19 +2,21 @@ use std::fmt;
 
 // Commutation relations for basic two-qubit gates
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum TwoQubitGateType {
     CX,
     CZ,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct TwoQubitGate {
     pub gate_type: TwoQubitGateType,
-    pub q_ctrl: u32,
-    pub q_target: u32,
+    pub q_ctrl: usize,
+    pub q_target: usize,
 }
 
 impl TwoQubitGate {
-    pub fn new(gate_type: TwoQubitGateType, q_ctrl: u32, q_target: u32) -> TwoQubitGate {
+    pub fn new(gate_type: TwoQubitGateType, q_ctrl: usize, q_target: usize) -> TwoQubitGate {
         TwoQubitGate {
             gate_type,
             q_ctrl,
