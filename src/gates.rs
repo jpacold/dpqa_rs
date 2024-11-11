@@ -24,7 +24,18 @@ impl TwoQubitGate {
         }
     }
 
+    pub fn parallel_with(&self, gate: &TwoQubitGate) -> bool {
+        self.q_ctrl != gate.q_ctrl
+            && self.q_ctrl != gate.q_target
+            && self.q_target != gate.q_ctrl
+            && self.q_target != gate.q_target
+    }
+
     pub fn commutes_with(&self, gate: &TwoQubitGate) -> bool {
+        if self.parallel_with(gate) {
+            return true;
+        }
+
         match self.gate_type {
             TwoQubitGateType::CX => match gate.gate_type {
                 TwoQubitGateType::CX => {
@@ -38,13 +49,6 @@ impl TwoQubitGate {
                 TwoQubitGateType::CZ => true,
             },
         }
-    }
-
-    pub fn parallel_with(&self, gate: &TwoQubitGate) -> bool {
-        self.q_ctrl != gate.q_ctrl
-            && self.q_ctrl != gate.q_target
-            && self.q_target != gate.q_ctrl
-            && self.q_target != gate.q_target
     }
 }
 
