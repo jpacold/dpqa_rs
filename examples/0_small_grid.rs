@@ -1,6 +1,4 @@
-pub mod dpqa;
-
-use dpqa::DPQA;
+use dpqa_rs::dpqa::DPQA;
 
 fn main() {
     let compiler = DPQA::new(3, 2);
