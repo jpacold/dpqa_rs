@@ -66,13 +66,13 @@ impl<'ctx> DPQAVars<'ctx> {
         cols: u64,
         aod_rows: u64,
         aod_cols: u64,
+        n_stages: usize,
     ) -> DPQAVars<'ctx> {
         let n_qubits = circuit.get_n_qubits();
-        let n_stages = circuit.get_n_stages();
 
         DPQAVars {
-            n_qubits: n_qubits,
-            n_stages: n_stages,
+            n_qubits,
+            n_stages,
             zero: ast::Int::from_u64(&context, 0),
             x_max: ast::Int::from_u64(&context, cols),
             y_max: ast::Int::from_u64(&context, rows),
@@ -163,10 +163,67 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
+    // The order of SLM columns must be consistent with the order
+    // of AOD columns
+    fn constraint_slm_order_from_aod(&self, solver: &Solver) {
+        let context = solver.get_context();
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in 0..self.n_qubits {
+                if ii_1 == ii_0 {
+                    continue;
+                }
+                for jj in 0..self.n_stages {
+                    let both_aod =
+                        ast::Bool::and(context, &[&self.in_aod[ii_0][jj], &self.in_aod[ii_1][jj]]);
+
+                    let start_col_lt = self.x[ii_0][jj].lt(&self.x[ii_1][jj]);
+                    let slm_col_order = ast::Bool::and(context, &[&both_aod, &start_col_lt]);
+                    let aod_col_order = self.c[ii_0][jj].lt(&self.c[ii_1][jj]);
+                    solver.assert(&slm_col_order.implies(&aod_col_order));
+
+                    let start_row_lt = self.y[ii_0][jj].lt(&self.y[ii_1][jj]);
+                    let slm_row_order = ast::Bool::and(context, &[&both_aod, &start_row_lt]);
+                    let aod_row_order = self.r[ii_0][jj].lt(&self.r[ii_1][jj]);
+                    solver.assert(&slm_row_order.implies(&aod_row_order));
+                }
+            }
+        }
+    }
+
+    // No crossing between AOD rows/columns
+    fn constraint_aod_order_from_slm(&self, solver: &Solver) {
+        let context = solver.get_context();
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in 0..self.n_qubits {
+                if ii_1 == ii_0 {
+                    continue;
+                }
+                for jj in 1..self.n_stages {
+                    let both_aod = ast::Bool::and(
+                        context,
+                        &[&self.in_aod[ii_0][jj - 1], &self.in_aod[ii_1][jj - 1]],
+                    );
+
+                    let start_col_lt = self.c[ii_0][jj - 1].lt(&self.c[ii_1][jj - 1]);
+                    let aod_col_order = ast::Bool::and(context, &[&both_aod, &start_col_lt]);
+                    let slm_col_order = self.x[ii_0][jj].le(&self.x[ii_1][jj]);
+                    solver.assert(&aod_col_order.implies(&slm_col_order));
+
+                    let start_row_lt = self.r[ii_0][jj - 1].lt(&self.r[ii_1][jj - 1]);
+                    let aod_row_order = ast::Bool::and(context, &[&both_aod, &start_row_lt]);
+                    let slm_row_order = self.y[ii_0][jj].le(&self.y[ii_1][jj]);
+                    solver.assert(&aod_row_order.implies(&slm_row_order));
+                }
+            }
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
         self.constraint_grid_bounds(solver);
         self.constraint_fixed_slm(solver);
         self.constraint_aod_move_together(solver);
+        self.constraint_slm_order_from_aod(solver);
+        self.constraint_aod_order_from_slm(solver);
     }
 }
