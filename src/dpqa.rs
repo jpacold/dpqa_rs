@@ -37,7 +37,14 @@ impl DPQA {
         let ctx = Context::new(&cfg);
         let solver = Solver::new(&ctx);
 
-        let vars = DPQAVars::new(&ctx, circuit, self.rows, self.cols);
+        let vars = DPQAVars::new(
+            &ctx,
+            circuit,
+            self.rows,
+            self.cols,
+            self.aod_rows,
+            self.aod_cols,
+        );
         vars.constrain_grid(&solver);
 
         solver.check() == SatResult::Sat
