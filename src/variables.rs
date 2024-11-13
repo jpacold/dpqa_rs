@@ -103,7 +103,7 @@ impl<'ctx> DPQAVars<'ctx> {
     }
 
     /// Constrain all qubits to stay within grid bounds
-    pub fn constrain_grid(&self, solver: &Solver) {
+    fn constraint_grid_bounds(&self, solver: &Solver) {
         DPQAVars::constrain_2d_vec(solver, &self.x, &self.zero, &self.x_max);
         DPQAVars::constrain_2d_vec(solver, &self.y, &self.zero, &self.y_max);
         DPQAVars::constrain_2d_vec(solver, &self.c, &self.zero, &self.c_max);
@@ -111,7 +111,7 @@ impl<'ctx> DPQAVars<'ctx> {
     }
 
     /// Any qubit in an SLM trap must stay in SLM between stages
-    pub fn constrain_slm(&self, solver: &Solver) {
+    fn constraint_fixed_slm(&self, solver: &Solver) {
         for ii in 0..self.n_qubits {
             for jj in 1..self.n_stages {
                 let x_fixed = self.x[ii][jj - 1]._eq(&self.x[ii][jj]);
@@ -125,9 +125,48 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
+    /// Rows and columns of the AOD grid must move together
+    fn constraint_aod_move_together(&self, solver: &Solver) {
+        for ii in 0..self.n_qubits {
+            for jj in 1..self.n_stages {
+                let c_fixed = self.c[ii][jj - 1]._eq(&self.c[ii][jj]);
+                let c_aod = self.in_aod[ii][jj].implies(&c_fixed);
+                solver.assert(&c_aod);
+
+                let r_fixed = self.r[ii][jj - 1]._eq(&self.r[ii][jj]);
+                let r_slm = self.in_aod[ii][jj].implies(&r_fixed);
+                solver.assert(&r_slm);
+            }
+        }
+
+        // If any two qubits are in the same AOD row, and the AOD row moves,
+        // then the two qubits must end up in the same row of the grid (i.e.
+        // at the same value of y), and similarly for columns.
+        let context = solver.get_context();
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in 0..self.n_qubits {
+                for jj in 1..self.n_stages {
+                    let both_aod =
+                        ast::Bool::and(context, &[&self.in_aod[ii_0][jj], &self.in_aod[ii_1][jj]]);
+
+                    let start_col_eq = self.c[ii_0][jj - 1]._eq(&self.c[ii_1][jj - 1]);
+                    let move_col_together = ast::Bool::and(context, &[&both_aod, &start_col_eq]);
+                    let next_col_eq = self.c[ii_0][jj]._eq(&self.c[ii_1][jj]);
+                    solver.assert(&move_col_together.implies(&next_col_eq));
+
+                    let start_row_eq = self.r[ii_0][jj - 1]._eq(&self.r[ii_1][jj - 1]);
+                    let move_row_together = ast::Bool::and(context, &[&both_aod, &start_row_eq]);
+                    let next_row_eq = self.r[ii_0][jj]._eq(&self.r[ii_1][jj]);
+                    solver.assert(&move_row_together.implies(&next_row_eq));
+                }
+            }
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
-        self.constrain_grid(solver);
-        self.constrain_slm(solver);
+        self.constraint_grid_bounds(solver);
+        self.constraint_fixed_slm(solver);
+        self.constraint_aod_move_together(solver);
     }
 }
