@@ -45,7 +45,7 @@ impl DPQA {
             self.aod_rows,
             self.aod_cols,
         );
-        vars.constrain_grid(&solver);
+        vars.set_constraints(&solver);
 
         solver.check() == SatResult::Sat
     }
