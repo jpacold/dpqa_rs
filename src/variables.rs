@@ -218,6 +218,80 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
+    // Prevent stacking/crowding of more than 3 AOD rows/columns
+    fn constraint_aod_crowding(&self, solver: &Solver) {
+        let context = solver.get_context();
+        let max_stack = ast::Int::from_u64(&context, 3);
+
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in 0..self.n_qubits {
+                if ii_1 == ii_0 {
+                    continue;
+                }
+                for jj_1 in 0..self.n_stages {
+                    let jj_0 = if jj_1 == 0 { 0 } else { jj_1 - 1 };
+
+                    let both_aod = ast::Bool::and(
+                        context,
+                        &[&self.in_aod[ii_0][jj_0], &self.in_aod[ii_1][jj_0]],
+                    );
+
+                    let col_diff =
+                        ast::Int::sub(&context, &[&self.c[ii_0][jj_0], &self.c[ii_1][jj_0]]);
+                    let col_diff_bound =
+                        ast::Bool::and(&context, &[&both_aod, &col_diff.ge(&max_stack)]);
+                    solver.assert(
+                        &col_diff_bound.implies(&self.x[ii_0][jj_1].gt(&self.x[ii_1][jj_1])),
+                    );
+
+                    let row_diff =
+                        ast::Int::sub(&context, &[&self.r[ii_0][jj_0], &self.r[ii_1][jj_0]]);
+                    let row_diff_bound =
+                        ast::Bool::and(&context, &[&both_aod, &row_diff.ge(&max_stack)]);
+                    solver.assert(
+                        &row_diff_bound.implies(&self.y[ii_0][jj_1].gt(&self.y[ii_1][jj_1])),
+                    );
+                }
+            }
+        }
+    }
+
+    // Limit traps to one atom at a time
+    fn constraint_site_crowding(&self, solver: &Solver) {
+        let context = solver.get_context();
+
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in (ii_0 + 1)..self.n_qubits {
+                for jj in 0..self.n_stages {
+                    let both_aod =
+                        ast::Bool::and(context, &[&self.in_aod[ii_0][jj], &self.in_aod[ii_1][jj]]);
+                    let cr_diff = ast::Bool::or(
+                        &context,
+                        &[
+                            &self.c[ii_0][jj]._eq(&self.c[ii_1][jj]).not(),
+                            &self.r[ii_0][jj]._eq(&self.r[ii_1][jj]).not(),
+                        ],
+                    );
+                    solver.assert(&both_aod.implies(&cr_diff));
+
+                    let both_slm = ast::Bool::and(
+                        context,
+                        &[&self.in_aod[ii_0][jj].not(), &self.in_aod[ii_1][jj].not()],
+                    );
+                    let xy_diff = ast::Bool::and(
+                        &context,
+                        &[
+                            &self.x[ii_0][jj]._eq(&self.x[ii_1][jj]),
+                            &self.y[ii_0][jj]._eq(&self.y[ii_1][jj]),
+                        ],
+                    )
+                    .not();
+                    solver.assert(&both_slm.implies(&xy_diff));
+                }
+            }
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
         self.constraint_grid_bounds(solver);
@@ -225,5 +299,7 @@ impl<'ctx> DPQAVars<'ctx> {
         self.constraint_aod_move_together(solver);
         self.constraint_slm_order_from_aod(solver);
         self.constraint_aod_order_from_slm(solver);
+        self.constraint_aod_crowding(solver);
+        self.constraint_site_crowding(solver);
     }
 }
