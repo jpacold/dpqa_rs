@@ -115,8 +115,31 @@ impl Circuit {
         true
     }
 
+    /// Get the minimum number of stages needed for this circuit. The only
+    /// criteria here are whether gates commute or depend on each other, so
+    /// the AOD solver may require more stages than this.
     pub fn get_n_stages(&self) -> usize {
         self.stages.len()
+    }
+
+    /// Returns pairs of gate indices (g0, g1) where g0 must be executed
+    /// before g1.
+    pub fn get_gate_ordering(&self) -> Vec<(usize, usize)> {
+        let mut v = Vec::new();
+        let n_s = self.stages.len();
+        for ii in 1..n_s {
+            for &g0 in &self.stages[ii - 1] {
+                for &g1 in &self.stages[ii] {
+                    v.push((g0, g1));
+                }
+            }
+        }
+        v
+    }
+
+    /// Get the number of two-qubit gates in the circuit
+    pub fn get_n_two_qubit_gates(&self) -> usize {
+        self.gates.len()
     }
 }
 

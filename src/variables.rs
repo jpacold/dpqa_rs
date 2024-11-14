@@ -16,14 +16,19 @@ pub struct DPQAVars<'ctx> {
     c_max: ast::Int<'ctx>,
     r_max: ast::Int<'ctx>,
 
-    /// Qubit positions
+    // Qubit positions
     x: Vec<Vec<ast::Int<'ctx>>>,
     y: Vec<Vec<ast::Int<'ctx>>>,
     c: Vec<Vec<ast::Int<'ctx>>>,
     r: Vec<Vec<ast::Int<'ctx>>>,
 
-    /// Determines whether qubit is in SLM (false) or AOD (true)
+    // Determines whether qubit is in SLM (false) or AOD (true)
     in_aod: Vec<Vec<ast::Bool<'ctx>>>,
+
+    // Time when each gate is executed
+    t: Vec<ast::Int<'ctx>>,
+    t_max: ast::Int<'ctx>,
+    t_order: Vec<(usize, usize)>,
 }
 
 impl<'ctx> DPQAVars<'ctx> {
@@ -69,6 +74,7 @@ impl<'ctx> DPQAVars<'ctx> {
         n_stages: usize,
     ) -> DPQAVars<'ctx> {
         let n_qubits = circuit.get_n_qubits();
+        let n_gates = circuit.get_n_two_qubit_gates();
 
         DPQAVars {
             n_qubits,
@@ -83,6 +89,11 @@ impl<'ctx> DPQAVars<'ctx> {
             c: DPQAVars::qubit_int_vars(&context, n_qubits, n_stages, "c"),
             r: DPQAVars::qubit_int_vars(&context, n_qubits, n_stages, "r"),
             in_aod: DPQAVars::qubit_bool_vars(&context, n_qubits, n_stages, "a"),
+            t: (0..n_gates)
+                .map(|ii| ast::Int::new_const(context, format!("t_{}", ii)))
+                .collect(),
+            t_max: ast::Int::from_u64(&context, n_stages as u64),
+            t_order: circuit.get_gate_ordering(),
         }
     }
 
@@ -319,8 +330,22 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
+    /// Restrict each gate time to 0 <= t < self.n_stages, and ensure that
+    /// gates with dependencies on each other are run in the right order
+    pub fn set_t_bounds(&self, solver: &Solver) {
+        for t_var in &self.t {
+            solver.assert(&t_var.ge(&self.zero));
+            solver.assert(&t_var.lt(&self.t_max));
+        }
+
+        for &(g0, g1) in &self.t_order {
+            solver.assert(&self.t[g0].lt(&self.t[g1]));
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
+        // Architecture constraints
         self.constraint_grid_bounds(solver);
         self.constraint_fixed_slm(solver);
         self.constraint_aod_move_together(solver);
@@ -329,5 +354,8 @@ impl<'ctx> DPQAVars<'ctx> {
         self.constraint_aod_crowding(solver);
         self.constraint_site_crowding(solver);
         self.constraint_no_swap(solver);
+
+        // Circuit-dependent constraints
+        self.set_t_bounds(solver);
     }
 }
