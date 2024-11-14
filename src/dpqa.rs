@@ -207,7 +207,7 @@ impl fmt::Display for DPQAInstruction {
                 y_to,
             } => write!(
                 f,
-                "Moved qubit row {:?} from y={} to y={}",
+                "Move qubit row {:?} from y={} to y={}",
                 qubits, y_from, y_to
             ),
             DPQAInstruction::MoveAODCol {
@@ -216,12 +216,12 @@ impl fmt::Display for DPQAInstruction {
                 x_to,
             } => write!(
                 f,
-                "Moved qubit column {:?} from x={} to x={}",
+                "Move qubit column {:?} from x={} to x={}",
                 qubits, x_from, x_to
             ),
             DPQAInstruction::MoveToSLM(qubit) => write!(f, "Moved qubit {} to SLM", qubit),
             DPQAInstruction::Gate(qubit_pairs) => {
-                write!(f, "Executed gate on qubit pair(s) {:?}", qubit_pairs)
+                write!(f, "Execute gate on qubit pair(s) {:?}", qubit_pairs)
             }
         }
     }
@@ -284,6 +284,31 @@ mod tests {
         circuit.recalculate_stages();
 
         let dpqa = DPQA::new(2, 2);
+        let result = dpqa.solve(&circuit);
+
+        if let DPQAResult::Succeeded(instructions) = result {
+            for x in &instructions {
+                println!("{}", x);
+            }
+        } else {
+            assert!(false)
+        }
+    }
+
+    #[test]
+    /// Circuit requiring two row/column moves
+    fn six_gates() {
+        let mut circuit = Circuit::new();
+
+        circuit.append(TwoQubitGate::new(CZ, 0, 2));
+        circuit.append(TwoQubitGate::new(CZ, 1, 3));
+        circuit.append(TwoQubitGate::new(CZ, 0, 4));
+        circuit.append(TwoQubitGate::new(CZ, 1, 5));
+        circuit.append(TwoQubitGate::new(CZ, 0, 6));
+        circuit.append(TwoQubitGate::new(CZ, 1, 7));
+        circuit.recalculate_stages();
+
+        let dpqa = DPQA::new(3, 2);
         let result = dpqa.solve(&circuit);
 
         if let DPQAResult::Succeeded(instructions) = result {
