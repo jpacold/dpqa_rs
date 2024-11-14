@@ -2,13 +2,13 @@ use std::fmt;
 
 // Commutation relations for basic two-qubit gates
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum TwoQubitGateType {
     CX,
     CZ,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct TwoQubitGate {
     pub gate_type: TwoQubitGateType,
     pub q_ctrl: usize,

@@ -34,6 +34,14 @@ pub struct DPQAVars<'ctx> {
     s_vals: Vec<ast::Int<'ctx>>,
 }
 
+/// Results from a successful solver run
+pub struct DPQAVarsValues {
+    pub xy: Vec<Vec<(u64, u64)>>,
+    pub cr: Vec<Vec<(u64, u64)>>,
+    pub aod: Vec<Vec<bool>>,
+    pub t: Vec<u64>,
+}
+
 impl<'ctx> DPQAVars<'ctx> {
     fn qubit_int_vars<'c>(
         context: &'c Context,
@@ -443,5 +451,48 @@ impl<'ctx> DPQAVars<'ctx> {
         self.constraint_t_bounds(solver);
         self.constraint_entangling_gates(solver);
         self.constraint_interaction_exactness(solver);
+    }
+
+    /// Get the qubit positions and gate execution times. Panics
+    /// if solver state != Sat.
+    pub fn eval(&self, solver: &Solver) -> DPQAVarsValues {
+        let model = solver.get_model().unwrap();
+
+        let get_u64 = |var: &ast::Int| -> u64 { model.eval(var, true).unwrap().as_u64().unwrap() };
+
+        let xy_result = (0..self.n_qubits)
+            .map(|ii| {
+                (0..self.n_stages)
+                    .map(|jj| (get_u64(&self.x[ii][jj]), get_u64(&self.y[ii][jj])))
+                    .collect()
+            })
+            .collect();
+
+        let cr_result = (0..self.n_qubits)
+            .map(|ii| {
+                (0..self.n_stages)
+                    .map(|jj| (get_u64(&self.c[ii][jj]), get_u64(&self.r[ii][jj])))
+                    .collect()
+            })
+            .collect();
+
+        let aod_result = self
+            .in_aod
+            .iter()
+            .map(|vars| {
+                vars.iter()
+                    .map(|v| model.eval(v, true).unwrap().as_bool().unwrap())
+                    .collect()
+            })
+            .collect();
+
+        let t_result = self.t.iter().map(|v| get_u64(v)).collect();
+
+        DPQAVarsValues {
+            xy: xy_result,
+            cr: cr_result,
+            aod: aod_result,
+            t: t_result,
+        }
     }
 }
