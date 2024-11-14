@@ -29,6 +29,7 @@ pub struct DPQAVars<'ctx> {
     t: Vec<ast::Int<'ctx>>,
     t_max: ast::Int<'ctx>,
     t_order: Vec<(usize, usize)>,
+    gate_qubits: Vec<(usize, usize)>,
 }
 
 impl<'ctx> DPQAVars<'ctx> {
@@ -94,6 +95,7 @@ impl<'ctx> DPQAVars<'ctx> {
                 .collect(),
             t_max: ast::Int::from_u64(&context, n_stages as u64),
             t_order: circuit.get_gate_ordering(),
+            gate_qubits: circuit.get_gate_qubit_pairs(),
         }
     }
 
@@ -332,7 +334,7 @@ impl<'ctx> DPQAVars<'ctx> {
 
     /// Restrict each gate time to 0 <= t < self.n_stages, and ensure that
     /// gates with dependencies on each other are run in the right order
-    pub fn set_t_bounds(&self, solver: &Solver) {
+    pub fn constraint_t_bounds(&self, solver: &Solver) {
         for t_var in &self.t {
             solver.assert(&t_var.ge(&self.zero));
             solver.assert(&t_var.lt(&self.t_max));
@@ -340,6 +342,25 @@ impl<'ctx> DPQAVars<'ctx> {
 
         for &(g0, g1) in &self.t_order {
             solver.assert(&self.t[g0].lt(&self.t[g1]));
+        }
+    }
+
+    /// Two qubits must be at the same grid position when an entangling gate
+    /// is run on them
+    pub fn constraint_entangling_gates(&self, solver: &Solver) {
+        let context = solver.get_context();
+        for jj in 0..self.n_stages {
+            let s_val = ast::Int::from_u64(&context, jj as u64);
+            for (ii, &(g0, g1)) in self.gate_qubits.iter().enumerate() {
+                let same_pos = ast::Bool::and(
+                    &context,
+                    &[
+                        &self.x[g0][jj]._eq(&self.x[g1][jj]),
+                        &self.y[g0][jj]._eq(&self.y[g1][jj]),
+                    ],
+                );
+                solver.assert(&self.t[ii]._eq(&s_val).implies(&same_pos));
+            }
         }
     }
 
@@ -356,6 +377,7 @@ impl<'ctx> DPQAVars<'ctx> {
         self.constraint_no_swap(solver);
 
         // Circuit-dependent constraints
-        self.set_t_bounds(solver);
+        self.constraint_t_bounds(solver);
+        self.constraint_entangling_gates(solver);
     }
 }

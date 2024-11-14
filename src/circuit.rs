@@ -141,6 +141,11 @@ impl Circuit {
     pub fn get_n_two_qubit_gates(&self) -> usize {
         self.gates.len()
     }
+
+    /// Get the pairs of qubits involved in each two-qubit gate
+    pub fn get_gate_qubit_pairs(&self) -> Vec<(usize, usize)> {
+        self.gates.iter().map(|g| (g.q_ctrl, g.q_target)).collect()
+    }
 }
 
 impl fmt::Display for Circuit {
