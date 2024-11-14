@@ -163,8 +163,8 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
-    // The order of SLM columns must be consistent with the order
-    // of AOD columns
+    /// The order of SLM columns must be consistent with the order
+    /// of AOD columns
     fn constraint_slm_order_from_aod(&self, solver: &Solver) {
         let context = solver.get_context();
         for ii_0 in 0..self.n_qubits {
@@ -190,7 +190,7 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
-    // No crossing between AOD rows/columns
+    /// No crossing between AOD rows/columns
     fn constraint_aod_order_from_slm(&self, solver: &Solver) {
         let context = solver.get_context();
         for ii_0 in 0..self.n_qubits {
@@ -218,7 +218,7 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
-    // Prevent stacking/crowding of more than 3 AOD rows/columns
+    /// Prevent stacking/crowding of more than 3 AOD rows/columns
     fn constraint_aod_crowding(&self, solver: &Solver) {
         let context = solver.get_context();
         let max_stack = ast::Int::from_u64(&context, 3);
@@ -256,7 +256,7 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
-    // Limit traps to one atom at a time
+    /// Limit traps to one atom at a time
     fn constraint_site_crowding(&self, solver: &Solver) {
         let context = solver.get_context();
 
@@ -292,6 +292,33 @@ impl<'ctx> DPQAVars<'ctx> {
         }
     }
 
+    /// Only allow AOD-SLM transfer when there is one atom at a given site
+    fn constraint_no_swap(&self, solver: &Solver) {
+        let context = solver.get_context();
+
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in (ii_0 + 1)..self.n_qubits {
+                for jj in 1..self.n_stages {
+                    let same_site = ast::Bool::and(
+                        &context,
+                        &[
+                            &self.x[ii_0][jj]._eq(&self.x[ii_1][jj]),
+                            &self.y[ii_0][jj]._eq(&self.y[ii_1][jj]),
+                        ],
+                    );
+                    let no_swap = ast::Bool::and(
+                        &context,
+                        &[
+                            &self.in_aod[ii_0][jj]._eq(&self.in_aod[ii_0][jj - 1]),
+                            &self.in_aod[ii_1][jj]._eq(&self.in_aod[ii_1][jj - 1]),
+                        ],
+                    );
+                    solver.assert(&same_site.implies(&no_swap));
+                }
+            }
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
         self.constraint_grid_bounds(solver);
@@ -301,5 +328,6 @@ impl<'ctx> DPQAVars<'ctx> {
         self.constraint_aod_order_from_slm(solver);
         self.constraint_aod_crowding(solver);
         self.constraint_site_crowding(solver);
+        self.constraint_no_swap(solver);
     }
 }
