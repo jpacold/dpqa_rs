@@ -1,4 +1,5 @@
 use crate::circuit::Circuit;
+use std::collections::HashMap;
 use z3::{
     ast::{self, Ast},
     Context, Solver,
@@ -30,6 +31,7 @@ pub struct DPQAVars<'ctx> {
     t_max: ast::Int<'ctx>,
     t_order: Vec<(usize, usize)>,
     gate_qubits: Vec<(usize, usize)>,
+    s_vals: Vec<ast::Int<'ctx>>,
 }
 
 impl<'ctx> DPQAVars<'ctx> {
@@ -96,6 +98,9 @@ impl<'ctx> DPQAVars<'ctx> {
             t_max: ast::Int::from_u64(&context, n_stages as u64),
             t_order: circuit.get_gate_ordering(),
             gate_qubits: circuit.get_gate_qubit_pairs(),
+            s_vals: (0..n_stages)
+                .map(|ii| ast::Int::from_u64(&context, ii as u64))
+                .collect(),
         }
     }
 
@@ -350,16 +355,74 @@ impl<'ctx> DPQAVars<'ctx> {
     pub fn constraint_entangling_gates(&self, solver: &Solver) {
         let context = solver.get_context();
         for jj in 0..self.n_stages {
-            let s_val = ast::Int::from_u64(&context, jj as u64);
-            for (ii, &(g0, g1)) in self.gate_qubits.iter().enumerate() {
+            for (ii, &(q0, q1)) in self.gate_qubits.iter().enumerate() {
                 let same_pos = ast::Bool::and(
                     &context,
                     &[
-                        &self.x[g0][jj]._eq(&self.x[g1][jj]),
-                        &self.y[g0][jj]._eq(&self.y[g1][jj]),
+                        &self.x[q0][jj]._eq(&self.x[q1][jj]),
+                        &self.y[q0][jj]._eq(&self.y[q1][jj]),
                     ],
                 );
-                solver.assert(&self.t[ii]._eq(&s_val).implies(&same_pos));
+                solver.assert(&self.t[ii]._eq(&self.s_vals[jj]).implies(&same_pos));
+            }
+        }
+    }
+
+    /// Two qubits may only be at the same grid position if they are both
+    /// used by a gate
+    pub fn constraint_interaction_exactness(&self, solver: &Solver) {
+        // Maps a pair of qubits q0, q1 (with q0 < q1) to the indices of the
+        // gate(s) that act on q0 and q1
+        let mut interactions: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+        for (ii, &(q_a, q_b)) in self.gate_qubits.iter().enumerate() {
+            let (q0, q1) = (q_a.min(q_b), q_a.max(q_b));
+            interactions.entry((q0, q1)).or_default().push(ii);
+        }
+
+        let context = solver.get_context();
+
+        for ii_0 in 0..self.n_qubits {
+            for ii_1 in (ii_0 + 1)..self.n_qubits {
+                if let Some(gate_indices) = interactions.get(&(ii_0, ii_1)) {
+                    // This pair of qubits can interact, but only at stages
+                    // where both are used in a gate
+                    for jj in 0..self.n_stages {
+                        let qubits_coincident = ast::Bool::and(
+                            &context,
+                            &[
+                                &self.x[ii_0][jj]._eq(&self.x[ii_1][jj]),
+                                &self.y[ii_0][jj]._eq(&self.y[ii_1][jj]),
+                            ],
+                        );
+
+                        let or_args: Vec<ast::Bool> = gate_indices
+                            .iter()
+                            .map(|&gg| self.t[gg]._eq(&self.s_vals[jj]))
+                            .collect();
+                        let gate_condition = ast::Bool::or(
+                            &context,
+                            or_args
+                                .iter()
+                                .map(|v| v)
+                                .collect::<Vec<&ast::Bool>>()
+                                .as_slice(),
+                        );
+
+                        solver.assert(&qubits_coincident.implies(&gate_condition));
+                    }
+                } else {
+                    // This pair of qubits cannot interact
+                    for jj in 0..self.n_stages {
+                        let qubits_not_coincident = ast::Bool::or(
+                            &context,
+                            &[
+                                &self.x[ii_0][jj]._eq(&self.x[ii_1][jj]).not(),
+                                &self.y[ii_0][jj]._eq(&self.y[ii_1][jj]).not(),
+                            ],
+                        );
+                        solver.assert(&qubits_not_coincident);
+                    }
+                }
             }
         }
     }
@@ -379,5 +442,6 @@ impl<'ctx> DPQAVars<'ctx> {
         // Circuit-dependent constraints
         self.constraint_t_bounds(solver);
         self.constraint_entangling_gates(solver);
+        self.constraint_interaction_exactness(solver);
     }
 }

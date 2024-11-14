@@ -103,7 +103,7 @@ mod tests {
         assert!(circuit.recalculate_stages());
         assert_eq!(circuit.get_n_stages(), 4);
 
-        let dpqa = DPQA::new(2, 3);
+        let dpqa = DPQA::new(2, 4);
         assert!(dpqa.solve(&circuit));
     }
 }
