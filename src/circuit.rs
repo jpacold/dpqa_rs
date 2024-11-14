@@ -4,7 +4,17 @@ use std::fmt;
 use std::string::String;
 use std::vec::Vec;
 
-/// Circuit represented as a sequence of basic two-qubit gates
+/// Circuit represented as a sequence of basic two-qubit gates.
+/// ```
+/// use dpqa_rs::circuit::Circuit;
+/// use dpqa_rs::gates::TwoQubitGate;
+/// use dpqa_rs::gates::TwoQubitGateType::{CX, CZ};
+/// 
+/// let mut circuit = Circuit::new();
+/// circuit.append(TwoQubitGate::new(CZ, 0, 1));
+/// circuit.append(TwoQubitGate::new(CX, 1, 3));
+/// println!("{}", circuit);
+/// ```
 pub struct Circuit {
     gates: Vec<TwoQubitGate>,
     stages: Vec<Vec<usize>>,

@@ -12,6 +12,11 @@ pub struct DPQA {
 
 impl DPQA {
     /// Create a new DPQA solver by specifying the size of the grid.
+    /// ```
+    /// use dpqa_rs::dpqa::DPQA;
+    /// let dpqa_compiler = DPQA::new(3, 2);
+    /// println!("{}", dpqa_compiler);
+    /// ```
     pub fn new(rows: u64, cols: u64) -> DPQA {
         DPQA {
             rows: rows,
@@ -34,12 +39,11 @@ impl DPQA {
 
     // ToDo: this should return a result struct with a list of operations,
     // instead of just a bool
-    pub fn solve(&self, circuit: &Circuit) -> bool {
+    pub fn solve(&self, circuit: &Circuit, extra_stages: Option<usize>) -> bool {
         let cfg = Config::new();
         let ctx = Context::new(&cfg);
         let solver = Solver::new(&ctx);
 
-        // ToDo: increase the number of stages if this fails
         let vars = DPQAVars::new(
             &ctx,
             circuit,
@@ -47,7 +51,7 @@ impl DPQA {
             self.cols,
             self.aod_rows,
             self.aod_cols,
-            circuit.get_n_stages(),
+            circuit.get_n_stages() + extra_stages.unwrap_or(0),
         );
         vars.set_constraints(&solver);
 
@@ -78,7 +82,7 @@ mod tests {
         circuit.append(TwoQubitGate::new(CX, 0, 1));
 
         let dpqa = DPQA::new(2, 1);
-        assert!(dpqa.solve(&circuit));
+        assert!(dpqa.solve(&circuit, None));
     }
 
     #[test]
@@ -104,6 +108,6 @@ mod tests {
         assert_eq!(circuit.get_n_stages(), 4);
 
         let dpqa = DPQA::new(2, 4);
-        assert!(dpqa.solve(&circuit));
+        assert!(dpqa.solve(&circuit, None));
     }
 }
