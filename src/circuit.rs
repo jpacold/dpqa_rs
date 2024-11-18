@@ -152,9 +152,14 @@ impl Circuit {
         self.gates.len()
     }
 
-    /// Get the pairs of qubits involved in each two-qubit gate
-    pub fn get_gate_qubit_pairs(&self) -> Vec<(usize, usize)> {
-        self.gates.iter().map(|g| (g.q_ctrl, g.q_target)).collect()
+    /// Get an iterator over the gates in the circuit
+    pub fn iter(&self) -> std::slice::Iter<'_, TwoQubitGate> {
+        self.gates.iter()
+    }
+
+    /// Get the nth gate in the circuit
+    pub fn get_gate(&self, n: usize) -> TwoQubitGate {
+        self.gates[n]
     }
 }
 

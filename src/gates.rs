@@ -8,7 +8,7 @@ pub enum TwoQubitGateType {
     CZ,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub struct TwoQubitGate {
     pub gate_type: TwoQubitGateType,
     pub q_ctrl: usize,
@@ -60,5 +60,11 @@ impl fmt::Display for TwoQubitGate {
         };
 
         write!(f, "{}({}, {})", gate_name, self.q_ctrl, self.q_target)
+    }
+}
+
+impl fmt::Debug for TwoQubitGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }

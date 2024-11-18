@@ -1,4 +1,4 @@
-use crate::{circuit::Circuit, variables::DPQAVars};
+use crate::{circuit::Circuit, gates::TwoQubitGate, variables::DPQAVars};
 use std::collections::HashMap;
 use std::fmt;
 use z3::{Config, Context, SatResult, Solver};
@@ -32,7 +32,7 @@ pub enum DPQAInstruction {
         x_to: u64,
     },
     MoveToSLM(usize),
-    Gate(Vec<(usize, usize)>),
+    Gate(Vec<TwoQubitGate>),
 }
 
 /// Compilation result object
@@ -95,7 +95,7 @@ impl DPQA {
 
             let vals = vars.eval(&solver);
             let mut instructions: Vec<DPQAInstruction> = Vec::new();
-            let gate_pairs = circuit.get_gate_qubit_pairs();
+            let n_gates = circuit.get_n_two_qubit_gates();
             let mut gate_idx = 0;
 
             for jj in 0..n_stages {
@@ -157,8 +157,8 @@ impl DPQA {
 
                 // Report gates
                 let mut gates_run = Vec::new();
-                while gate_idx < gate_pairs.len() && vals.t[gate_idx] as usize == jj {
-                    gates_run.push(gate_pairs[gate_idx]);
+                while gate_idx < n_gates && vals.t[gate_idx] as usize == jj {
+                    gates_run.push(circuit.get_gate(gate_idx));
                     gate_idx += 1;
                 }
                 if !gates_run.is_empty() {
@@ -221,7 +221,7 @@ impl fmt::Display for DPQAInstruction {
             ),
             DPQAInstruction::MoveToSLM(qubit) => write!(f, "Moved qubit {} to SLM", qubit),
             DPQAInstruction::Gate(qubit_pairs) => {
-                write!(f, "Execute gate on qubit pair(s) {:?}", qubit_pairs)
+                write!(f, "Execute {:?}", qubit_pairs)
             }
         }
     }

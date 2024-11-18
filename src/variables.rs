@@ -6,7 +6,8 @@ use z3::{
 };
 
 /// Variables used by the DPQA solver
-pub struct DPQAVars<'ctx> {
+pub struct DPQAVars<'ctx, 'circ> {
+    circuit: &'circ Circuit,
     n_qubits: usize,
     n_stages: usize,
 
@@ -30,7 +31,6 @@ pub struct DPQAVars<'ctx> {
     t: Vec<ast::Int<'ctx>>,
     t_max: ast::Int<'ctx>,
     t_order: Vec<(usize, usize)>,
-    gate_qubits: Vec<(usize, usize)>,
     s_vals: Vec<ast::Int<'ctx>>,
 }
 
@@ -42,7 +42,7 @@ pub struct DPQAVarsValues {
     pub t: Vec<u64>,
 }
 
-impl<'ctx> DPQAVars<'ctx> {
+impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     fn qubit_int_vars<'c>(
         context: &'c Context,
         n_qubits: usize,
@@ -77,19 +77,20 @@ impl<'ctx> DPQAVars<'ctx> {
 
     pub fn new(
         context: &'ctx Context,
-        circuit: &Circuit,
+        circuit: &'circ Circuit,
         rows: u64,
         cols: u64,
         aod_rows: u64,
         aod_cols: u64,
         n_stages: usize,
-    ) -> DPQAVars<'ctx> {
+    ) -> DPQAVars<'ctx, 'circ> {
         let n_qubits = circuit.get_n_qubits();
         let n_gates = circuit.get_n_two_qubit_gates();
 
         DPQAVars {
-            n_qubits,
-            n_stages,
+            circuit: circuit,
+            n_qubits: circuit.get_n_qubits(),
+            n_stages: n_stages,
             zero: ast::Int::from_u64(&context, 0),
             x_max: ast::Int::from_u64(&context, cols),
             y_max: ast::Int::from_u64(&context, rows),
@@ -105,7 +106,6 @@ impl<'ctx> DPQAVars<'ctx> {
                 .collect(),
             t_max: ast::Int::from_u64(&context, n_stages as u64),
             t_order: circuit.get_gate_ordering(),
-            gate_qubits: circuit.get_gate_qubit_pairs(),
             s_vals: (0..n_stages)
                 .map(|ii| ast::Int::from_u64(&context, ii as u64))
                 .collect(),
@@ -363,7 +363,8 @@ impl<'ctx> DPQAVars<'ctx> {
     pub fn constraint_entangling_gates(&self, solver: &Solver) {
         let context = solver.get_context();
         for jj in 0..self.n_stages {
-            for (ii, &(q0, q1)) in self.gate_qubits.iter().enumerate() {
+            for (ii, g) in self.circuit.iter().enumerate() {
+                let (q0, q1) = (g.q_ctrl, g.q_target);
                 let same_pos = ast::Bool::and(
                     &context,
                     &[
@@ -382,8 +383,8 @@ impl<'ctx> DPQAVars<'ctx> {
         // Maps a pair of qubits q0, q1 (with q0 < q1) to the indices of the
         // gate(s) that act on q0 and q1
         let mut interactions: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
-        for (ii, &(q_a, q_b)) in self.gate_qubits.iter().enumerate() {
-            let (q0, q1) = (q_a.min(q_b), q_a.max(q_b));
+        for (ii, g) in self.circuit.iter().enumerate() {
+            let (q0, q1) = (g.q_ctrl.min(g.q_target), g.q_target.max(g.q_ctrl));
             interactions.entry((q0, q1)).or_default().push(ii);
         }
 
