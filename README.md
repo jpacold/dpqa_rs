@@ -18,9 +18,10 @@ One way to do this is to keep qubits 2 through 7 fixed, while moving qubits 0 an
 use super::{DPQAResult, DPQA};
 use crate::circuit::Circuit;
 use crate::gates::TwoQubitGate;
-// CZ is currently a placeholder for a generic two-qubit gate
 use crate::gates::TwoQubitGateType::CZ;
+```
 
+```rust
 // Define the sequence of gates
 let mut circuit = Circuit::new();
 circuit.append(TwoQubitGate::new(CZ, 0, 2));
@@ -45,11 +46,11 @@ Initialize qubit 4 at x=0, y=0 (SLM)
 Initialize qubit 5 at x=1, y=0 (AOD)
 Initialize qubit 6 at x=0, y=1 (SLM)
 Initialize qubit 7 at x=1, y=1 (SLM)
-Execute gate on qubit pair(s) [(0, 2), (1, 3)]
+Execute [CZ(0, 2), CZ(1, 3)]
 Move qubit row [0, 1] from y=2 to y=0
-Execute gate on qubit pair(s) [(0, 4), (1, 5)]
+Execute [CZ(0, 4), CZ(1, 5)]
 Move qubit row [0, 1] from y=0 to y=1
-Execute gate on qubit pair(s) [(0, 6), (1, 7)]
+Execute [CZ(0, 6), CZ(1, 7)]
 ```
 
 ## Note
