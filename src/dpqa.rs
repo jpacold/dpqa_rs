@@ -242,7 +242,7 @@ mod tests {
     use super::{DPQAResult, DPQA};
     use crate::circuit::Circuit;
     use crate::gates::TwoQubitGate;
-    use crate::gates::TwoQubitGateType::CZ;
+    use crate::gates::TwoQubitGateType::{CX, CZ};
 
     #[test]
     fn one_gate() {
@@ -343,6 +343,37 @@ mod tests {
         assert_eq!(circuit.get_n_stages(), 4);
 
         let dpqa = DPQA::new(2, 4);
+        let result = dpqa.solve(&circuit);
+
+        if let DPQAResult::Succeeded(instructions) = result {
+            for x in &instructions {
+                println!("{}", x);
+            }
+        } else {
+            assert!(false)
+        }
+    }
+
+    #[test]
+    // Check that different gate types are separated into different stages
+    fn gate_types_separated() {
+        let mut circuit = Circuit::new();
+
+        circuit.append(TwoQubitGate::new(CZ, 0, 2));
+        circuit.append(TwoQubitGate::new(CZ, 1, 3));
+        circuit.append(TwoQubitGate::new(CX, 4, 5));
+        circuit.append(TwoQubitGate::new(CX, 6, 7));
+        circuit.recalculate_stages();
+
+        // We need at least 6 total sites so that we can keep qubits 4-7
+        // separated when we run the gates on qubits 0-4, and vice versa.
+        {
+            let dpqa_too_small = DPQA::new(2, 2);
+            let failed = dpqa_too_small.solve(&circuit);
+            assert!(failed == DPQAResult::Failed);
+        }
+
+        let dpqa = DPQA::new(2, 3);
         let result = dpqa.solve(&circuit);
 
         if let DPQAResult::Succeeded(instructions) = result {

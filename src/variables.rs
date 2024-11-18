@@ -436,6 +436,20 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         }
     }
 
+    /// If two gates are run at the same time, they must have the same type
+    fn constraint_gate_type_timing(&self, solver: &Solver) {
+        let n_gates = self.circuit.get_n_two_qubit_gates();
+        for ii_0 in 0..n_gates {
+            let g_0 = self.circuit.get_gate(ii_0);
+            for ii_1 in (ii_0 + 1)..n_gates {
+                let g_1 = self.circuit.get_gate(ii_1);
+                if g_0.gate_type != g_1.gate_type {
+                    solver.assert(&self.t[ii_0]._eq(&self.t[ii_1]).not());
+                }
+            }
+        }
+    }
+
     /// Set all constraints
     pub fn set_constraints(&self, solver: &Solver) {
         // Architecture constraints
@@ -452,6 +466,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         self.constraint_t_bounds(solver);
         self.constraint_entangling_gates(solver);
         self.constraint_interaction_exactness(solver);
+        self.constraint_gate_type_timing(solver);
     }
 
     /// Get the qubit positions and gate execution times. Panics

@@ -1,4 +1,4 @@
-use crate::gates::TwoQubitGate;
+use crate::gates::{TwoQubitGate, TwoQubitGateType};
 use std::collections::HashSet;
 use std::fmt;
 use std::string::String;
@@ -80,7 +80,7 @@ impl Circuit {
     /// (which can be executed in parallel). Returns true if any gates were
     /// moved into different stages.
     pub fn recalculate_stages(&mut self) -> bool {
-        let mut new_stages: Vec<HashSet<usize>> = Vec::new();
+        let mut new_stages: Vec<(TwoQubitGateType, HashSet<usize>)> = Vec::new();
         let mut qubits_used: Vec<Vec<bool>> = Vec::new();
 
         for (ii, g) in self.gates.iter().enumerate() {
@@ -89,14 +89,18 @@ impl Circuit {
 
             for jj in (0..n_s).rev() {
                 if !(qubits_used[jj][g.q_ctrl] || qubits_used[jj][g.q_target]) {
-                    // We could add the gate to this stage
-                    stage_idx = jj;
+                    // We could add the gate here, if it has the same type
+                    // as the gates already in the stage
+                    if new_stages[jj].0 == g.gate_type {
+                        stage_idx = jj;
+                    }
                 }
 
                 // Check whether we could push the gate back to the previous
                 // stage. This is possible if it commutes with all the gates
                 // in the current stage.
                 let commutes = new_stages[jj]
+                    .1
                     .iter()
                     .all(|&gate_idx| self.gates[gate_idx].commutes_with(g));
                 if !commutes {
@@ -105,17 +109,17 @@ impl Circuit {
             }
 
             if stage_idx == n_s {
-                new_stages.push(HashSet::new());
+                new_stages.push((g.gate_type, HashSet::new()));
                 qubits_used.push(vec![false; self.n_qubits]);
             }
-            new_stages[stage_idx].insert(ii);
+            new_stages[stage_idx].1.insert(ii);
             qubits_used[stage_idx][g.q_ctrl] = true;
             qubits_used[stage_idx][g.q_target] = true;
         }
 
         let tmp = new_stages
             .into_iter()
-            .map(|s| s.into_iter().collect())
+            .map(|s| s.1.into_iter().collect())
             .collect();
 
         if tmp == self.stages {
@@ -214,7 +218,7 @@ mod tests {
     fn restage_1() {
         let mut circuit = Circuit::new();
         circuit.append(TwoQubitGate::new(CX, 0, 1));
-        circuit.append(TwoQubitGate::new(CZ, 2, 3));
+        circuit.append(TwoQubitGate::new(CX, 2, 3));
         assert_eq!(circuit.get_n_stages(), 2);
         assert!(circuit.recalculate_stages());
         assert_eq!(circuit.get_n_stages(), 1);
@@ -230,5 +234,14 @@ mod tests {
         assert_eq!(circuit.get_n_stages(), 4);
         assert!(circuit.recalculate_stages());
         assert_eq!(circuit.get_n_stages(), 3);
+    }
+
+    #[test]
+    fn restage_3() {
+        let mut circuit = Circuit::new();
+        circuit.append(TwoQubitGate::new(CX, 0, 1));
+        circuit.append(TwoQubitGate::new(CZ, 2, 3));
+        assert_eq!(circuit.get_n_stages(), 2);
+        assert!(!circuit.recalculate_stages());
     }
 }
