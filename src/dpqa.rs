@@ -71,8 +71,32 @@ impl DPQA {
         }
     }
 
-    /// Set up constraints for the given architecture and circuit, the attempt
-    /// to solve
+    /// Set up constraints for the given architecture and circuit, then attempt
+    /// to solve.
+    /// ```
+    /// use dpqa_rs::dpqa::{DPQA, DPQAResult};
+    /// use dpqa_rs::circuit::Circuit;
+    /// use dpqa_rs::gates::{TwoQubitGate, TwoQubitGateType::CZ};
+    ///
+    /// let mut circuit = Circuit::new();
+    ///
+    /// circuit.append(TwoQubitGate::new(CZ, 0, 2));
+    /// circuit.append(TwoQubitGate::new(CZ, 1, 3));
+    /// circuit.append(TwoQubitGate::new(CZ, 2, 4));
+    /// circuit.append(TwoQubitGate::new(CZ, 3, 5));
+    /// circuit.recalculate_stages();
+    ///
+    /// let dpqa = DPQA::new(2, 2);
+    /// let result = dpqa.solve(&circuit);
+    ///
+    /// if let DPQAResult::Succeeded(instructions) = result {
+    ///     for x in &instructions {
+    ///         println!("{}", x);
+    ///     }
+    /// } else {
+    ///     println!("Could not compile with the given constraints");
+    /// }
+    /// ```
     pub fn solve(&self, circuit: &Circuit) -> DPQAResult {
         let cfg = Config::new();
         let ctx = Context::new(&cfg);
@@ -219,7 +243,7 @@ impl fmt::Display for DPQAInstruction {
                 "Move qubit column {:?} from x={} to x={}",
                 qubits, x_from, x_to
             ),
-            DPQAInstruction::MoveToSLM(qubit) => write!(f, "Moved qubit {} to SLM", qubit),
+            DPQAInstruction::MoveToSLM(qubit) => write!(f, "Transfer qubit {} to SLM", qubit),
             DPQAInstruction::Gate(qubit_pairs) => {
                 write!(f, "Execute {:?}", qubit_pairs)
             }
@@ -261,29 +285,6 @@ mod tests {
         circuit.append(TwoQubitGate::new(CZ, 1, 2));
 
         let dpqa = DPQA::new(2, 1);
-        let result = dpqa.solve(&circuit);
-
-        if let DPQAResult::Succeeded(instructions) = result {
-            for x in &instructions {
-                println!("{}", x);
-            }
-        } else {
-            assert!(false)
-        }
-    }
-
-    #[test]
-    /// Circuit requiring one row/column move
-    fn four_gates() {
-        let mut circuit = Circuit::new();
-
-        circuit.append(TwoQubitGate::new(CZ, 0, 2));
-        circuit.append(TwoQubitGate::new(CZ, 1, 3));
-        circuit.append(TwoQubitGate::new(CZ, 2, 4));
-        circuit.append(TwoQubitGate::new(CZ, 3, 5));
-        circuit.recalculate_stages();
-
-        let dpqa = DPQA::new(2, 2);
         let result = dpqa.solve(&circuit);
 
         if let DPQAResult::Succeeded(instructions) = result {

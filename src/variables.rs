@@ -1,4 +1,5 @@
 use crate::circuit::Circuit;
+use itertools::izip;
 use std::collections::HashMap;
 use z3::{
     ast::{self, Ast},
@@ -112,56 +113,52 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         }
     }
 
-    fn constrain_2d_vec<'c>(
-        solver: &Solver,
-        vars: &Vec<Vec<ast::Int<'c>>>,
-        lower_bound: &ast::Int<'c>,
-        upper_bound: &ast::Int<'c>,
-    ) {
-        for var_vec in vars {
-            for var in var_vec {
-                let lb = var.ge(&lower_bound);
-                solver.assert(&lb);
-                let ub = var.lt(&upper_bound);
-                solver.assert(&ub);
-            }
-        }
-    }
-
     /// Constrain all qubits to stay within grid bounds
     fn constraint_grid_bounds(&self, solver: &Solver) {
-        DPQAVars::constrain_2d_vec(solver, &self.x, &self.zero, &self.x_max);
-        DPQAVars::constrain_2d_vec(solver, &self.y, &self.zero, &self.y_max);
-        DPQAVars::constrain_2d_vec(solver, &self.c, &self.zero, &self.c_max);
-        DPQAVars::constrain_2d_vec(solver, &self.r, &self.zero, &self.r_max);
+        let set_bounds = |solver: &Solver,
+                          vars: &[Vec<ast::Int>],
+                          lower_bound: &ast::Int,
+                          upper_bound: &ast::Int| {
+            for var_vec in vars {
+                for var in var_vec {
+                    let lb = var.ge(&lower_bound);
+                    solver.assert(&lb);
+                    let ub = var.lt(&upper_bound);
+                    solver.assert(&ub);
+                }
+            }
+        };
+
+        set_bounds(solver, &self.x, &self.zero, &self.x_max);
+        set_bounds(solver, &self.y, &self.zero, &self.y_max);
+        set_bounds(solver, &self.c, &self.zero, &self.c_max);
+        set_bounds(solver, &self.r, &self.zero, &self.r_max);
     }
 
-    /// Any qubit in an SLM trap must stay in SLM between stages
-    fn constraint_fixed_slm(&self, solver: &Solver) {
-        for ii in 0..self.n_qubits {
-            for jj in 1..self.n_stages {
-                let x_fixed = self.x[ii][jj - 1]._eq(&self.x[ii][jj]);
-                let x_slm = self.in_aod[ii][jj].not().implies(&x_fixed);
-                solver.assert(&x_slm);
+    fn require_unchanged(solver: &Solver, condition: &ast::Bool, var: &[ast::Int]) {
+        solver.assert(&condition.implies(&var[0]._eq(&var[1])));
+    }
 
-                let y_fixed = self.y[ii][jj - 1]._eq(&self.y[ii][jj]);
-                let y_slm = self.in_aod[ii][jj].not().implies(&y_fixed);
-                solver.assert(&y_slm);
+    /// Any qubit in an SLM trap must stay in place between stages
+    fn constraint_fixed_slm(&self, solver: &Solver) {
+        // Loop over qubits
+        for (x_q, y_q, aod_q) in izip!(&self.x, &self.y, &self.in_aod) {
+            // Loop over stages
+            for (x_step, y_step, aod) in izip!(x_q.windows(2), y_q.windows(2), aod_q) {
+                DPQAVars::require_unchanged(solver, &aod.not(), x_step);
+                DPQAVars::require_unchanged(solver, &aod.not(), y_step);
             }
         }
     }
 
     /// Rows and columns of the AOD grid must move together
     fn constraint_aod_move_together(&self, solver: &Solver) {
-        for ii in 0..self.n_qubits {
-            for jj in 1..self.n_stages {
-                let c_fixed = self.c[ii][jj - 1]._eq(&self.c[ii][jj]);
-                let c_aod = self.in_aod[ii][jj].implies(&c_fixed);
-                solver.assert(&c_aod);
-
-                let r_fixed = self.r[ii][jj - 1]._eq(&self.r[ii][jj]);
-                let r_slm = self.in_aod[ii][jj].implies(&r_fixed);
-                solver.assert(&r_slm);
+        // Loop over qubits
+        for (c_q, r_q, aod_q) in izip!(&self.c, &self.r, &self.in_aod) {
+            // Loop over stages
+            for (c_step, r_step, aod) in izip!(c_q.windows(2), r_q.windows(2), aod_q) {
+                DPQAVars::require_unchanged(solver, &aod, c_step);
+                DPQAVars::require_unchanged(solver, &aod, r_step);
             }
         }
 
@@ -170,19 +167,21 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         // at the same value of y), and similarly for columns.
         let context = solver.get_context();
         for ii_0 in 0..self.n_qubits {
-            for ii_1 in 0..self.n_qubits {
+            for ii_1 in (ii_0 + 1)..self.n_qubits {
                 for jj in 1..self.n_stages {
-                    let both_aod =
-                        ast::Bool::and(context, &[&self.in_aod[ii_0][jj], &self.in_aod[ii_1][jj]]);
+                    let both_aod = ast::Bool::and(
+                        context,
+                        &[&self.in_aod[ii_0][jj - 1], &self.in_aod[ii_1][jj - 1]],
+                    );
 
                     let start_col_eq = self.c[ii_0][jj - 1]._eq(&self.c[ii_1][jj - 1]);
                     let move_col_together = ast::Bool::and(context, &[&both_aod, &start_col_eq]);
-                    let next_col_eq = self.c[ii_0][jj]._eq(&self.c[ii_1][jj]);
+                    let next_col_eq = self.x[ii_0][jj]._eq(&self.x[ii_1][jj]);
                     solver.assert(&move_col_together.implies(&next_col_eq));
 
                     let start_row_eq = self.r[ii_0][jj - 1]._eq(&self.r[ii_1][jj - 1]);
                     let move_row_together = ast::Bool::and(context, &[&both_aod, &start_row_eq]);
-                    let next_row_eq = self.r[ii_0][jj]._eq(&self.r[ii_1][jj]);
+                    let next_row_eq = self.y[ii_0][jj]._eq(&self.y[ii_1][jj]);
                     solver.assert(&move_row_together.implies(&next_row_eq));
                 }
             }
