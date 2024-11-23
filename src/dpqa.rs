@@ -32,6 +32,7 @@ pub enum DPQAInstruction {
         x_to: u64,
     },
     MoveToSLM(usize),
+    MoveToAOD(usize),
     Gate(Vec<TwoQubitGate>),
 }
 
@@ -134,13 +135,6 @@ impl DPQA {
                         });
                     }
                 } else {
-                    // Check for AOD to SLM moves
-                    for ii in 0..n_qubits {
-                        if !vals.aod[ii][jj] && vals.aod[ii][jj - 1] {
-                            instructions.push(DPQAInstruction::MoveToSLM(ii));
-                        }
-                    }
-
                     // Check for AOD grid moves
                     let mut moves_x: HashMap<(u64, u64), Vec<usize>> = HashMap::new();
                     for ii in 0..n_qubits {
@@ -176,6 +170,15 @@ impl DPQA {
                             y_from: mv.0,
                             y_to: mv.1,
                         });
+                    }
+                    
+                    // Check for AOD to SLM moves
+                    for ii in 0..n_qubits {
+                        if !vals.aod[ii][jj] && vals.aod[ii][jj - 1] {
+                            instructions.push(DPQAInstruction::MoveToSLM(ii));
+                        } else if vals.aod[ii][jj] && !vals.aod[ii][jj - 1] {
+                            instructions.push(DPQAInstruction::MoveToAOD(ii));
+                        }
                     }
                 }
 
@@ -244,6 +247,7 @@ impl fmt::Display for DPQAInstruction {
                 qubits, x_from, x_to
             ),
             DPQAInstruction::MoveToSLM(qubit) => write!(f, "Transfer qubit {} to SLM", qubit),
+            DPQAInstruction::MoveToAOD(qubit) => write!(f, "Transfer qubit {} to AOD", qubit),
             DPQAInstruction::Gate(qubit_pairs) => {
                 write!(f, "Execute {:?}", qubit_pairs)
             }
