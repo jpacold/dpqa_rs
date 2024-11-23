@@ -1,7 +1,7 @@
 use crate::{circuit::Circuit, gates::TwoQubitGate, variables::DPQAVars};
 use std::collections::HashMap;
 use std::fmt;
-use z3::{Config, Context, SatResult, Solver};
+use z3::{Config, Context, Optimize, SatResult};
 
 /// DPQA solver
 pub struct DPQA {
@@ -101,7 +101,7 @@ impl DPQA {
     pub fn solve(&self, circuit: &Circuit) -> DPQAResult {
         let cfg = Config::new();
         let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
+        let solver = Optimize::new(&ctx);
         let n_stages = circuit.get_n_stages() + self.extra_stages;
 
         let vars = DPQAVars::new(
@@ -114,8 +114,9 @@ impl DPQA {
             n_stages,
         );
         vars.set_constraints(&solver);
+        vars.set_optimization(&solver);
 
-        if solver.check() == SatResult::Sat {
+        if solver.check(&[]) == SatResult::Sat {
             let n_qubits = circuit.get_n_qubits();
 
             let vals = vars.eval(&solver);
@@ -171,7 +172,7 @@ impl DPQA {
                             y_to: mv.1,
                         });
                     }
-                    
+
                     // Check for AOD to SLM moves
                     for ii in 0..n_qubits {
                         if !vals.aod[ii][jj] && vals.aod[ii][jj - 1] {

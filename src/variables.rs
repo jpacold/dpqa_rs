@@ -3,7 +3,7 @@ use itertools::{izip, Itertools};
 use std::collections::HashMap;
 use z3::{
     ast::{self, Ast},
-    Context, Solver,
+    Context, Optimize,
 };
 
 /// Variables associated with a qubit
@@ -59,9 +59,10 @@ impl<'ctx> QubitVars<'ctx> {
 /// Variables used by the DPQA solver
 pub struct DPQAVars<'ctx, 'circ> {
     circuit: &'circ Circuit,
+    zero: ast::Int<'ctx>,
+    one: ast::Int<'ctx>,
 
     // Grid bounds
-    zero: ast::Int<'ctx>,
     x_max: ast::Int<'ctx>,
     y_max: ast::Int<'ctx>,
     c_max: ast::Int<'ctx>,
@@ -101,6 +102,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         DPQAVars {
             circuit: circuit,
             zero: ast::Int::from_u64(&context, 0),
+            one: ast::Int::from_u64(&context, 1),
             x_max: ast::Int::from_u64(&context, cols),
             y_max: ast::Int::from_u64(&context, rows),
             c_max: ast::Int::from_u64(&context, aod_cols),
@@ -120,7 +122,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Constrain all qubits to stay within grid bounds
-    fn constraint_grid_bounds(&self, solver: &Solver) {
+    fn constraint_grid_bounds(&self, solver: &Optimize) {
         let set_bounds = |vars: &[ast::Int], lower_bound: &ast::Int, upper_bound: &ast::Int| {
             for v in vars {
                 let lb = v.ge(&lower_bound);
@@ -138,12 +140,12 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         }
     }
 
-    fn require_unchanged(solver: &Solver, condition: &ast::Bool, var: &[ast::Int]) {
+    fn require_unchanged(solver: &Optimize, condition: &ast::Bool, var: &[ast::Int]) {
         solver.assert(&condition.implies(&var[0]._eq(&var[1])));
     }
 
     /// Any qubit in an SLM trap must stay in place between stages
-    fn constraint_fixed_slm(&self, solver: &Solver) {
+    fn constraint_fixed_slm(&self, solver: &Optimize) {
         for q in &self.qubits {
             // Loop over stages
             for (x_step, y_step, aod) in izip!(q.x.windows(2), q.y.windows(2), &q.aod) {
@@ -154,7 +156,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Rows and columns of the AOD grid must move together
-    fn constraint_aod_move_together(&self, solver: &Solver) {
+    fn constraint_aod_move_together(&self, solver: &Optimize) {
         for q in &self.qubits {
             // Loop over stages
             for (c_step, r_step, aod) in izip!(q.c.windows(2), q.r.windows(2), &q.aod) {
@@ -190,7 +192,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
 
     /// The order of AOD columns must be consistent with the order
     /// of SLM columns
-    fn constraint_aod_order_from_slm(&self, solver: &Solver) {
+    fn constraint_aod_order_from_slm(&self, solver: &Optimize) {
         let context = solver.get_context();
         let xy_lt_implies_cr_lt =
             |aod: &ast::Bool, xy: (&ast::Int, &ast::Int), cr: (&ast::Int, &ast::Int)| {
@@ -215,7 +217,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
 
     /// The order of SLM columns must be consistent with the order
     /// of AOD columns
-    fn constraint_slm_order_from_aod(&self, solver: &Solver) {
+    fn constraint_slm_order_from_aod(&self, solver: &Optimize) {
         let context = solver.get_context();
         let cr_lt_implies_xy_le =
             |aod: &ast::Bool, cr: (&ast::Int, &ast::Int), xy: (&ast::Int, &ast::Int)| {
@@ -242,7 +244,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Prevent stacking/crowding of more than 3 AOD rows/columns
-    fn constraint_aod_crowding(&self, solver: &Solver) {
+    fn constraint_aod_crowding(&self, solver: &Optimize) {
         let context = solver.get_context();
         let max_stack = ast::Int::from_u64(&context, 3);
 
@@ -278,7 +280,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Limit traps to one atom at a time
-    fn constraint_site_crowding(&self, solver: &Solver) {
+    fn constraint_site_crowding(&self, solver: &Optimize) {
         let context = solver.get_context();
 
         for (q0, q1) in self.qubits.iter().tuple_combinations() {
@@ -297,7 +299,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Only allow AOD-SLM transfer when there is one atom at a given site
-    fn constraint_no_swap(&self, solver: &Solver) {
+    fn constraint_no_swap(&self, solver: &Optimize) {
         let context = solver.get_context();
 
         for (q0, q1) in self.qubits.iter().tuple_combinations() {
@@ -318,7 +320,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
 
     /// Restrict each gate time to 0 <= t < self.n_stages, and ensure that
     /// gates with dependencies on each other are run in the right order
-    pub fn constraint_t_bounds(&self, solver: &Solver) {
+    pub fn constraint_t_bounds(&self, solver: &Optimize) {
         for t_var in &self.t {
             solver.assert(&t_var.ge(&self.zero));
             solver.assert(&t_var.lt(&self.t_max));
@@ -331,7 +333,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
 
     /// Two qubits must be at the same grid position when an entangling gate
     /// is run on them
-    pub fn constraint_entangling_gates(&self, solver: &Solver) {
+    pub fn constraint_entangling_gates(&self, solver: &Optimize) {
         let context = solver.get_context();
         for (g, t) in izip!(self.circuit.iter(), self.t.iter()) {
             let (q0, q1) = (&self.qubits[g.q_ctrl], &self.qubits[g.q_target]);
@@ -344,7 +346,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
 
     /// Two qubits may only be at the same grid position if they are both
     /// used by a gate
-    pub fn constraint_interaction_exactness(&self, solver: &Solver) {
+    pub fn constraint_interaction_exactness(&self, solver: &Optimize) {
         // Maps a pair of qubits q0, q1 (with q0 < q1) to the indices of the
         // gate(s) that act on q0 and q1
         let mut interactions: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
@@ -384,7 +386,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// If two gates are run at the same time, they must have the same type
-    fn constraint_gate_type_timing(&self, solver: &Solver) {
+    fn constraint_gate_type_timing(&self, solver: &Optimize) {
         for ((ii0, g0), (ii1, g1)) in self.circuit.iter().enumerate().tuple_combinations() {
             if g0.gate_type != g1.gate_type {
                 solver.assert(&self.t[ii0]._eq(&self.t[ii1]).not());
@@ -393,7 +395,7 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
     }
 
     /// Set all constraints
-    pub fn set_constraints(&self, solver: &Solver) {
+    pub fn set_constraints(&self, solver: &Optimize) {
         // Architecture constraints
         self.constraint_grid_bounds(solver);
         self.constraint_fixed_slm(solver);
@@ -411,9 +413,54 @@ impl<'ctx, 'circ> DPQAVars<'ctx, 'circ> {
         self.constraint_gate_type_timing(solver);
     }
 
+    /// Minimize the number of moves between trap types
+    fn minimize_transfers(&self, solver: &Optimize) {
+        if self.t.len() == 1 {
+            // If there is only one stage, there are no transfers
+            return;
+        }
+        let context = solver.get_context();
+
+        let transferred: Vec<ast::Int<'_>> = self
+            .qubits
+            .iter()
+            .flat_map(|q| {
+                q.aod.windows(2).map(|step| {
+                    let (curr, next) = (&step[0], &step[1]);
+                    curr._eq(&next).ite(&self.zero, &self.one)
+                })
+            })
+            .collect();
+        let refs: Vec<&ast::Int> = transferred.iter().map(|v| v).collect();
+
+        let n_transfers = ast::Int::add(context, refs.as_slice());
+        solver.minimize(&n_transfers);
+    }
+
+    /// Keep atoms in the stationary traps if possible
+    fn prefer_slm(&self, solver: &Optimize) {
+        let context = solver.get_context();
+
+        let in_aod: Vec<ast::Int<'_>> = self
+            .qubits
+            .iter()
+            .flat_map(|q| q.aod.iter().map(|trap| trap.ite(&self.one, &self.zero)))
+            .collect();
+        let refs: Vec<&ast::Int> = in_aod.iter().map(|v| v).collect();
+
+        let aod_total = ast::Int::add(context, refs.as_slice());
+        solver.minimize(&aod_total);
+    }
+
+    /// Set optimization targets
+    pub fn set_optimization(&self, solver: &Optimize) {
+        self.minimize_transfers(solver);
+        self.prefer_slm(solver);
+    }
+
     /// Get the qubit positions and gate execution times. Panics
     /// if solver state != Sat.
-    pub fn eval(&self, solver: &Solver) -> DPQAVarsValues {
+    pub fn eval(&self, solver: &Optimize) -> DPQAVarsValues {
         let model = solver.get_model().unwrap();
 
         let get_u64 = |var: &ast::Int| -> u64 { model.eval(var, true).unwrap().as_u64().unwrap() };
