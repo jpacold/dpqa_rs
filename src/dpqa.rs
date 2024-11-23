@@ -314,7 +314,7 @@ mod tests {
         circuit.append(TwoQubitGate::new(CZ, 1, 7));
         circuit.recalculate_stages();
 
-        let dpqa = DPQA::new(3, 2);
+        let dpqa = DPQA::new_aod(3, 2, 1, 2);
         let result = dpqa.solve(&circuit);
 
         if let DPQAResult::Succeeded(instructions) = result {
