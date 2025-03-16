@@ -1,4 +1,6 @@
-use crate::{circuit::Circuit, gates::TwoQubitGate, variables::DPQAVars};
+use crate::{
+    circuit::Circuit, instruction::DPQAInstruction, result::DPQAResult, variables::DPQAVars,
+};
 use std::collections::HashMap;
 use std::fmt;
 use z3::{Config, Context, Optimize, SatResult};
@@ -10,37 +12,6 @@ pub struct DPQA {
     aod_rows: u64,
     aod_cols: u64,
     extra_stages: usize,
-}
-
-/// Qubit array instructions
-#[derive(PartialEq, Eq, Debug)]
-pub enum DPQAInstruction {
-    Init {
-        qubit: usize,
-        x: u64,
-        y: u64,
-        in_aod: bool,
-    },
-    MoveAODRow {
-        qubits: Vec<usize>,
-        y_from: u64,
-        y_to: u64,
-    },
-    MoveAODCol {
-        qubits: Vec<usize>,
-        x_from: u64,
-        x_to: u64,
-    },
-    MoveToSLM(usize),
-    MoveToAOD(usize),
-    Gate(Vec<TwoQubitGate>),
-}
-
-/// Compilation result object
-#[derive(PartialEq, Eq, Debug)]
-pub enum DPQAResult {
-    Failed,
-    Succeeded(Vec<DPQAInstruction>),
 }
 
 impl DPQA {
@@ -75,7 +46,8 @@ impl DPQA {
     /// Set up constraints for the given architecture and circuit, then attempt
     /// to solve.
     /// ```
-    /// use dpqa_rs::dpqa::{DPQA, DPQAResult};
+    /// use dpqa_rs::dpqa::DPQA;
+    /// use dpqa_rs::result::DPQAResult;
     /// use dpqa_rs::circuit::Circuit;
     /// use dpqa_rs::gates::{TwoQubitGate, TwoQubitGateType::CZ};
     ///
@@ -202,57 +174,6 @@ impl DPQA {
     /// needed to execute all the gates in the circuit
     pub fn set_extra_stages(&mut self, extra_stages: usize) {
         self.extra_stages = extra_stages;
-    }
-}
-
-impl fmt::Display for DPQAInstruction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let aod_str = |in_aod: &bool| -> &str {
-            if *in_aod {
-                "AOD"
-            } else {
-                "SLM"
-            }
-        };
-
-        match self {
-            DPQAInstruction::Init {
-                qubit,
-                x,
-                y,
-                in_aod,
-            } => write!(
-                f,
-                "Initialize qubit {} at x={}, y={} ({})",
-                qubit,
-                x,
-                y,
-                aod_str(in_aod)
-            ),
-            DPQAInstruction::MoveAODRow {
-                qubits,
-                y_from,
-                y_to,
-            } => write!(
-                f,
-                "Move qubit row {:?} from y={} to y={}",
-                qubits, y_from, y_to
-            ),
-            DPQAInstruction::MoveAODCol {
-                qubits,
-                x_from,
-                x_to,
-            } => write!(
-                f,
-                "Move qubit column {:?} from x={} to x={}",
-                qubits, x_from, x_to
-            ),
-            DPQAInstruction::MoveToSLM(qubit) => write!(f, "Transfer qubit {} to SLM", qubit),
-            DPQAInstruction::MoveToAOD(qubit) => write!(f, "Transfer qubit {} to AOD", qubit),
-            DPQAInstruction::Gate(qubit_pairs) => {
-                write!(f, "Execute {:?}", qubit_pairs)
-            }
-        }
     }
 }
 
